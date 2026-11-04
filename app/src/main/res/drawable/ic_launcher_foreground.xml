@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- glossy glass disc -->
+    <path android:pathData="M54,30 m-24,0 a24,24 0 1,0 48,0 a24,24 0 1,0 -48,0">
+        <aapt:attr xmlns:aapt="http://schemas.android.com/aapt" name="android:fillColor">
+            <gradient
+                android:startX="36" android:startY="10"
+                android:endX="72" android:endY="56"
+                android:type="linear">
+                <item android:offset="0.0" android:color="#5FE07F" />
+                <item android:offset="1.0" android:color="#239044" />
+            </gradient>
+        </aapt:attr>
+    </path>
+    <!-- phone handset -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M45.3,20.4c-1.2,2.4 -1.8,5 -1.8,7.6c0,10.3 8.4,18.7 18.7,18.7c2.6,0 5.2,-0.6 7.6,-1.8c0.8,-0.4 1.1,-1.4 0.6,-2.1l-3.1,-4.6c-0.4,-0.6 -1.1,-0.8 -1.8,-0.5c-1.5,0.5 -3.1,0.8 -4.7,0.8c-0.7,0 -1.2,0.5 -1.2,1.2v1.9c-3.4,-1.4 -6.1,-4.1 -7.5,-7.5h1.9c0.7,0 1.2,-0.5 1.2,-1.2c0,-1.6 0.3,-3.2 0.8,-4.7c0.2,-0.6 0,-1.4 -0.5,-1.8l-4.6,-3.1c-0.8,-0.5 -1.8,-0.2 -2.1,0.6z" />
+</vector>

@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<meta name="theme-color" content="#000000" />
+<title>Deto Phone</title>
+<style>
+  /* ============================================================
+     Deto Phone · iPhone-style dialer · "Crystal Glass"
+     Runs inside an Android WebView (real calls via Android bridge)
+     and standalone in a browser (demo in-call overlay).
+     ============================================================ */
+
+  :root {
+    --green: #34c759;
+    --green-glow: rgba(52, 199, 89, 0.55);
+    --blue: #0a84ff;
+    --red: #ff453a;
+    --text: #ffffff;
+    --text-dim: rgba(235, 235, 245, 0.6);
+    --text-faint: rgba(235, 235, 245, 0.35);
+    --sep: rgba(255, 255, 255, 0.09);
+    --glass-tint: rgba(255, 255, 255, 0.08);
+    --glass-tint-strong: rgba(255, 255, 255, 0.14);
+    --glass-edge: rgba(255, 255, 255, 0.5);
+    --glass-edge-soft: rgba(255, 255, 255, 0.12);
+    --safe-top: env(safe-area-inset-top, 48px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --tabbar-h: 92px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  html, body {
+    height: 100%;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", "Roboto", system-ui, sans-serif;
+    background: #000;
+    color: var(--text);
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  .stage { position: fixed; inset: 0; display: grid; place-items: center;
+    background: radial-gradient(130% 90% at 20% 0%, #15202b 0%, #0a0d12 45%, #050506 100%); }
+
+  .phone {
+    position: relative;
+    width: min(100vw, 430px);
+    height: min(100vh, 932px);
+    max-height: 100vh;
+    overflow: hidden;
+    background: #000;
+    isolation: isolate;
+  }
+  @media (min-width: 460px) and (min-height: 940px) {
+    .phone { border-radius: 54px; box-shadow: 0 0 0 10px #1c1c1e, 0 0 0 12px #2c2c2e, 0 40px 120px rgba(0,0,0,0.8); }
+  }
+
+  /* Ambient color field that the crystal glass refracts */
+  .phone::before {
+    content: ""; position: absolute; inset: -25%; z-index: 0;
+    background:
+      radial-gradient(42% 32% at 80% 6%, rgba(10,132,255,0.28), transparent 70%),
+      radial-gradient(48% 38% at 12% 94%, rgba(52,199,89,0.22), transparent 70%),
+      radial-gradient(42% 30% at 92% 88%, rgba(191,90,242,0.20), transparent 70%),
+      radial-gradient(40% 30% at 8% 30%, rgba(255,159,10,0.14), transparent 70%);
+    filter: blur(12px); pointer-events: none;
+  }
+
+  .screen { position: absolute; inset: 0; z-index: 1; display: flex; flex-direction: column; }
+
+  /* ===================== Status bar (hidden on native, real one shows) ===================== */
+  .statusbar {
+    position: relative; z-index: 5; height: 48px;
+    display: flex; align-items: flex-end; justify-content: space-between;
+    padding: 0 26px 6px; font-size: 15px; font-weight: 600; letter-spacing: 0.3px; flex: none;
+  }
+  .statusbar .right { display: flex; align-items: center; gap: 7px; }
+  .battery { width: 26px; height: 13px; border: 1.3px solid rgba(255,255,255,0.5); border-radius: 4px; position: relative; padding: 1.5px; }
+  .battery::after { content: ""; position: absolute; right: -3.4px; top: 50%; transform: translateY(-50%); width: 2px; height: 5px; border-radius: 0 2px 2px 0; background: rgba(255,255,255,0.5); }
+  .battery i { display: block; height: 100%; width: 72%; background: #fff; border-radius: 1.5px; }
+  .island { position: absolute; top: 11px; left: 50%; transform: translateX(-50%); width: 122px; height: 35px; background: #000; border-radius: 20px; z-index: 6; }
+
+  body.native .statusbar, body.native .island { display: none; }
+  body.native .screen { padding-top: var(--safe-top); }
+
+  /* ===================== Views ===================== */
+  .views { position: relative; flex: 1; overflow: hidden; }
+  .view { position: absolute; inset: 0; display: flex; flex-direction: column;
+    opacity: 0; visibility: hidden; transform: translateY(8px);
+    transition: opacity 0.28s ease, transform 0.28s ease, visibility 0.28s;
+    padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom) + 6px); }
+  .view.active { opacity: 1; visibility: visible; transform: none; }
+  .scroll { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  .scroll::-webkit-scrollbar { width: 0; }
+
+  .large-title { font-size: 34px; font-weight: 700; letter-spacing: -0.5px; padding: 6px 20px 10px; display: flex; align-items: center; justify-content: space-between; }
+  .plus-btn { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; color: var(--blue); font-size: 26px; font-weight: 300;
+    background: var(--glass-tint); border: 1px solid var(--glass-edge-soft); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+
+  /* ===================== CRYSTAL GLASS primitive ===================== */
+  /* Clearer than frosted: light blur + high saturation + crisp bright
+     rim, an iridescent edge tint, and a sharp specular streak. */
+  .glass {
+    position: relative;
+    background: linear-gradient(135deg, rgba(255,255,255,0.14), rgba(255,255,255,0.04) 45%, rgba(255,255,255,0.02));
+    backdrop-filter: blur(14px) saturate(200%) brightness(1.06);
+    -webkit-backdrop-filter: blur(14px) saturate(200%) brightness(1.06);
+    border: 1px solid var(--glass-edge-soft);
+    box-shadow:
+      inset 0 1px 0.5px var(--glass-edge),
+      inset 0 -1px 1px rgba(0,0,0,0.35),
+      inset 1px 0 1px rgba(120,190,255,0.10),
+      inset -1px 0 1px rgba(255,120,200,0.08),
+      0 8px 30px rgba(0,0,0,0.45);
+    overflow: hidden;
+  }
+  .glass::after {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(118deg,
+      rgba(255,255,255,0.32) 0%, rgba(255,255,255,0.05) 14%,
+      transparent 34%, transparent 62%,
+      rgba(255,255,255,0.06) 82%, rgba(255,255,255,0.22) 100%);
+  }
+
+  /* ===================== KEYPAD ===================== */
+  #keypad { justify-content: flex-end; }
+  .dial-display { text-align: center; min-height: 72px; display: flex; align-items: center; justify-content: center;
+    font-size: 46px; font-weight: 300; letter-spacing: 1px; padding: 0 20px; margin-bottom: 2px; }
+  .dial-sub { text-align: center; color: var(--blue); font-size: 15px; height: 18px; margin-bottom: 12px; }
+
+  .pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px 26px; padding: 0 38px; justify-items: center; margin-bottom: 22px; }
+  .key {
+    width: 78px; height: 78px; border-radius: 50%;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer;
+    background:
+      radial-gradient(120% 120% at 30% 22%, rgba(255,255,255,0.22), rgba(255,255,255,0.06) 52%, rgba(255,255,255,0.025) 100%);
+    backdrop-filter: blur(10px) saturate(190%) brightness(1.08);
+    -webkit-backdrop-filter: blur(10px) saturate(190%) brightness(1.08);
+    border: 1px solid rgba(255,255,255,0.14);
+    box-shadow:
+      inset 0 2px 1px rgba(255,255,255,0.55),
+      inset 0 -3px 5px rgba(0,0,0,0.38),
+      inset 2px 0 3px rgba(130,195,255,0.12),
+      inset -2px 0 3px rgba(255,130,205,0.10),
+      0 6px 16px rgba(0,0,0,0.38);
+    transition: transform 0.1s ease, box-shadow 0.12s ease; position: relative; overflow: hidden;
+  }
+  .key::before { content: ""; position: absolute; top: 5px; left: 14px; right: 14px; height: 38%; border-radius: 50%;
+    background: linear-gradient(180deg, rgba(255,255,255,0.4), transparent); pointer-events: none; }
+  .key:active { transform: scale(0.93);
+    background: radial-gradient(120% 120% at 30% 22%, rgba(255,255,255,0.45), rgba(255,255,255,0.16) 60%);
+    box-shadow: inset 0 2px 1px rgba(255,255,255,0.7), inset 0 -1px 3px rgba(0,0,0,0.3), 0 0 26px rgba(255,255,255,0.18); }
+  .key .num { font-size: 36px; font-weight: 400; line-height: 1; }
+  .key .let { font-size: 10px; font-weight: 600; letter-spacing: 2px; margin-top: 4px; color: var(--text-dim); }
+  .key .sym { font-size: 34px; font-weight: 500; }
+
+  .pad-actions { display: grid; grid-template-columns: 1fr 78px 1fr; align-items: center; padding: 0 38px; margin-bottom: 8px; }
+  .call-btn { grid-column: 2; width: 78px; height: 78px; border-radius: 50%; display: grid; place-items: center; cursor: pointer;
+    background: radial-gradient(120% 120% at 35% 22%, #7cf09a, var(--green) 52%, #239044 100%);
+    border: 1px solid rgba(255,255,255,0.35);
+    box-shadow: inset 0 2px 1px rgba(255,255,255,0.6), inset 0 -3px 6px rgba(0,0,0,0.25), 0 8px 26px var(--green-glow);
+    transition: transform 0.12s ease, box-shadow 0.2s ease; }
+  .call-btn:active { transform: scale(0.92); }
+  .call-btn.pulse { animation: callpulse 1s ease-in-out infinite; }
+  @keyframes callpulse { 0%,100% { box-shadow: inset 0 2px 1px rgba(255,255,255,0.6), 0 8px 26px var(--green-glow); }
+    50% { box-shadow: inset 0 2px 1px rgba(255,255,255,0.6), 0 8px 40px var(--green-glow), 0 0 0 9px rgba(52,199,89,0.14); } }
+  .del-btn { grid-column: 3; justify-self: start; margin-left: 10px; width: 46px; height: 46px; display: grid; place-items: center; color: #fff; cursor: pointer; opacity: 0; transition: opacity 0.2s; }
+  .del-btn.show { opacity: 1; }
+
+  /* ===================== Lists ===================== */
+  .search { margin: 2px 16px 14px; display: flex; align-items: center; gap: 8px; padding: 11px 14px; border-radius: 14px; color: var(--text-dim); font-size: 17px; }
+  .section-head { font-size: 21px; font-weight: 700; padding: 14px 20px 6px; }
+  .row { display: flex; align-items: center; gap: 14px; padding: 11px 20px; position: relative; cursor: pointer; }
+  .row:active { background: rgba(255,255,255,0.05); }
+  .row + .row::before { content: ""; position: absolute; left: 74px; right: 0; top: 0; height: 1px; background: var(--sep); }
+  .avatar { width: 44px; height: 44px; border-radius: 50%; flex: none; display: grid; place-items: center; font-size: 18px; font-weight: 600; color: #fff;
+    background: linear-gradient(145deg, #3a3a3c, #1c1c1e); box-shadow: inset 0 1px 0 rgba(255,255,255,0.14); }
+  .row .meta { flex: 1; min-width: 0; }
+  .row .name { font-size: 18px; font-weight: 500; }
+  .row .name.missed { color: var(--red); }
+  .row .sub { font-size: 13px; color: var(--text-dim); margin-top: 1px; display: flex; align-items: center; gap: 5px; }
+  .row .time { color: var(--text-dim); font-size: 15px; }
+  .row .info-i { width: 28px; height: 28px; border-radius: 50%; color: var(--blue); display: grid; place-items: center; background: var(--glass-tint); border: 1px solid var(--glass-edge-soft); }
+  .vm-empty { text-align: center; color: var(--text-dim); padding: 60px 40px; font-size: 15px; line-height: 1.5; }
+
+  /* ===================== Liquid/Crystal glass tab bar ===================== */
+  .tabbar-wrap { position: absolute; left: 0; right: 0; bottom: 0; z-index: 10; display: flex; justify-content: center;
+    padding: 0 12px calc(16px + var(--safe-bottom)); pointer-events: none; }
+  .tabbar { pointer-events: auto; width: 100%; max-width: 406px; display: flex; justify-content: space-around; align-items: center;
+    padding: 10px 6px; border-radius: 30px; background: rgba(28,28,30,0.4);
+    backdrop-filter: blur(26px) saturate(210%) brightness(1.05); -webkit-backdrop-filter: blur(26px) saturate(210%) brightness(1.05);
+    border: 1px solid rgba(255,255,255,0.14);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.35), inset 0 -1px 2px rgba(0,0,0,0.3),
+      inset 2px 0 3px rgba(130,195,255,0.10), inset -2px 0 3px rgba(255,130,205,0.08), 0 10px 40px rgba(0,0,0,0.55);
+    position: relative; overflow: hidden; }
+  .tabbar::after { content:""; position:absolute; inset:0; pointer-events:none;
+    background: linear-gradient(118deg, rgba(255,255,255,0.18), transparent 32%, transparent 70%, rgba(255,255,255,0.12)); }
+  .tab { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; color: var(--text-dim);
+    font-size: 10px; font-weight: 500; cursor: pointer; padding: 4px 0; border-radius: 20px; position: relative; z-index: 1; transition: color 0.2s; }
+  .tab svg { width: 24px; height: 24px; }
+  .tab.active { color: var(--blue); }
+  .tab-indicator { position: absolute; top: 6px; bottom: 6px; z-index: 0; border-radius: 22px;
+    background: rgba(255,255,255,0.16); border: 1px solid rgba(255,255,255,0.26);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.5), 0 2px 10px rgba(0,0,0,0.25); backdrop-filter: blur(8px);
+    transition: transform 0.35s cubic-bezier(0.34,1.3,0.5,1), width 0.35s cubic-bezier(0.34,1.3,0.5,1); pointer-events: none; }
+
+  /* ===================== Demo in-call overlay (browser only) ===================== */
+  .incall { position: absolute; inset: 0; z-index: 30; display: flex; flex-direction: column; align-items: center; padding-top: 120px;
+    background: radial-gradient(120% 70% at 50% 0%, #1d3a2a, #0a1410 60%, #050807);
+    opacity: 0; visibility: hidden; transform: scale(1.04); transition: opacity 0.4s ease, transform 0.4s ease, visibility 0.4s; }
+  .incall.show { opacity: 1; visibility: visible; transform: none; }
+  .incall .cname { font-size: 34px; font-weight: 500; }
+  .incall .cstat { color: var(--text-dim); font-size: 18px; margin-top: 8px; }
+  .incall .cavatar { width: 110px; height: 110px; border-radius: 50%; margin: 40px 0 10px; display: grid; place-items: center; font-size: 44px; font-weight: 600;
+    background: linear-gradient(145deg,#3a3a3c,#1c1c1e); box-shadow: inset 0 2px 0 rgba(255,255,255,0.15), 0 10px 40px rgba(0,0,0,0.5); }
+  .incall-actions { margin-top: auto; margin-bottom: 70px; display: grid; grid-template-columns: repeat(3, 84px); gap: 26px 36px; justify-content: center; }
+  .ic-btn { width: 84px; height: 84px; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+    font-size: 12px; color: #fff; cursor: pointer; background: var(--glass-tint-strong);
+    backdrop-filter: blur(18px) saturate(170%); -webkit-backdrop-filter: blur(18px) saturate(170%);
+    border: 1px solid rgba(255,255,255,0.16); box-shadow: inset 0 1px 0 rgba(255,255,255,0.3), 0 6px 20px rgba(0,0,0,0.4); transition: transform 0.12s, background 0.15s; }
+  .ic-btn:active { transform: scale(0.93); }
+  .ic-btn.on { background: rgba(255,255,255,0.9); color:#111; }
+  .ic-btn svg { width: 28px; height: 28px; }
+  .end-btn { grid-column: 2; margin-top: 10px; width: 76px; height: 76px; border-radius: 50%; justify-self:center; display: grid; place-items: center; cursor: pointer;
+    background: radial-gradient(120% 120% at 35% 25%, #ff6b60, var(--red) 55%, #c42920); box-shadow: inset 0 2px 1px rgba(255,255,255,0.4), 0 8px 26px rgba(255,69,58,0.5); transition: transform 0.12s; }
+  .end-btn:active { transform: scale(0.9); }
+
+  .toast { position: absolute; left: 50%; bottom: calc(var(--tabbar-h) + 30px); transform: translateX(-50%) translateY(20px);
+    background: rgba(28,28,30,0.7); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.15);
+    color: #fff; padding: 10px 18px; border-radius: 16px; font-size: 14px; z-index: 40; opacity: 0; transition: opacity 0.25s, transform 0.25s; pointer-events: none; box-shadow: 0 8px 30px rgba(0,0,0,0.5); }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="phone">
+    <div class="island"></div>
+    <div class="screen">
+
+      <div class="statusbar">
+        <div class="left" id="clock">9:41</div>
+        <div class="right">
+          <svg width="18" height="13" viewBox="0 0 18 13" fill="#fff"><rect x="0" y="9" width="3" height="4" rx="1"/><rect x="5" y="6" width="3" height="7" rx="1"/><rect x="10" y="3" width="3" height="10" rx="1"/><rect x="15" y="0" width="3" height="13" rx="1"/></svg>
+          <span style="font-size:13px;font-weight:600;">5G</span>
+          <div class="battery"><i></i></div>
+        </div>
+      </div>
+
+      <div class="views">
+        <div class="view" id="favourites">
+          <div class="large-title">Favourites <div class="plus-btn">+</div></div>
+          <div class="scroll fav" id="favList"></div>
+        </div>
+        <div class="view" id="recents">
+          <div class="large-title">Recents</div>
+          <div class="scroll" id="recentList"></div>
+        </div>
+        <div class="view" id="contacts">
+          <div class="large-title">Contacts <div class="plus-btn">+</div></div>
+          <div class="search glass" style="border-radius:14px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+            Search
+          </div>
+          <div class="scroll" id="contactList"></div>
+        </div>
+        <div class="view" id="keypad">
+          <div class="scroll" style="display:flex;flex-direction:column;justify-content:flex-end;">
+            <div class="dial-display" id="dialDisplay"></div>
+            <div class="dial-sub" id="dialSub"></div>
+            <div class="pad" id="pad"></div>
+            <div class="pad-actions">
+              <div class="call-btn" id="callBtn" title="Call">
+                <svg width="34" height="34" viewBox="0 0 24 24" fill="#fff"><path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.3 21 3 13.7 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.2.2 2.4.6 3.6.1.4 0 .8-.3 1l-2.2 2.2z"/></svg>
+              </div>
+              <div class="del-btn" id="delBtn">
+                <svg width="30" height="24" viewBox="0 0 30 24" fill="none" stroke="#fff" stroke-width="2"><path d="M9 3h17a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H9L1 12 9 3z"/><path d="M15 9l6 6M21 9l-6 6" stroke-linecap="round"/></svg>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="view" id="voicemail">
+          <div class="large-title">Voicemail</div>
+          <div class="scroll">
+            <div class="vm-empty">
+              <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" stroke-width="1.6" style="margin-bottom:14px;"><circle cx="6" cy="14" r="4"/><circle cx="18" cy="14" r="4"/><path d="M6 14h12"/></svg>
+              <div>No voicemails.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tabbar-wrap">
+        <div class="tabbar" id="tabbar">
+          <span class="tab-indicator" id="tabIndicator"></span>
+          <div class="tab" data-view="favourites">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 17.3l-5.4 3.2 1.4-6.1-4.7-4.1 6.2-.5L12 4l2.5 5.8 6.2.5-4.7 4.1 1.4 6.1z"/></svg>
+            <span>Favourites</span>
+          </div>
+          <div class="tab" data-view="recents">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2" stroke-linecap="round"/></svg>
+            <span>Recents</span>
+          </div>
+          <div class="tab" data-view="contacts">
+            <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5z"/></svg>
+            <span>Contacts</span>
+          </div>
+          <div class="tab active" data-view="keypad">
+            <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="6" cy="6" r="1.8"/><circle cx="12" cy="6" r="1.8"/><circle cx="18" cy="6" r="1.8"/><circle cx="6" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="18" cy="12" r="1.8"/><circle cx="6" cy="18" r="1.8"/><circle cx="12" cy="18" r="1.8"/><circle cx="18" cy="18" r="1.8"/></svg>
+            <span>Keypad</span>
+          </div>
+          <div class="tab" data-view="voicemail">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="14" r="4"/><circle cx="18" cy="14" r="4"/><path d="M6 14h12"/></svg>
+            <span>Voicemail</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="incall" id="incall">
+        <div class="cavatar" id="icAvatar">?</div>
+        <div class="cname" id="icName">Unknown</div>
+        <div class="cstat" id="icStat">calling…</div>
+        <div class="incall-actions">
+          <div class="ic-btn" data-toggle="mute"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3" stroke-linecap="round"/></svg>mute</div>
+          <div class="ic-btn" data-toggle="keypad"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="6" cy="6" r="1.6"/><circle cx="12" cy="6" r="1.6"/><circle cx="18" cy="6" r="1.6"/><circle cx="6" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18" cy="12" r="1.6"/><circle cx="6" cy="18" r="1.6"/><circle cx="12" cy="18" r="1.6"/><circle cx="18" cy="18" r="1.6"/></svg>keypad</div>
+          <div class="ic-btn" data-toggle="speaker"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9v6h4l5 4V5L8 9H4z" fill="currentColor" stroke="none"/><path d="M16 9a4 4 0 0 1 0 6M18.5 7a7 7 0 0 1 0 10" stroke-linecap="round"/></svg>speaker</div>
+          <div class="ic-btn" data-toggle="add"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 8v8M8 12h8"/></svg>add call</div>
+          <div class="ic-btn" data-toggle="facetime"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="13" height="12" rx="3"/><path d="M16 10l5-3v10l-5-3z"/></svg>video</div>
+          <div class="ic-btn" data-toggle="contacts"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="8" r="3.4"/><path d="M5 19c0-3.3 3.1-5.5 7-5.5s7 2.2 7 5.5z"/></svg>contacts</div>
+          <div class="end-btn" id="endBtn"><svg width="34" height="34" viewBox="0 0 24 24" fill="#fff"><path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.3 21 3 13.7 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.2.2 2.4.6 3.6.1.4 0 .8-.3 1l-2.2 2.2z" transform="rotate(135 12 12)"/></svg></div>
+        </div>
+      </div>
+
+      <div class="toast" id="toast"></div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var NATIVE = !!(window.Android && typeof window.Android.placeCall === "function");
+  if (NATIVE) document.body.classList.add("native");
+
+  var contacts = [
+    { name: "Ambulance",            number: "102",             fav: false },
+    { name: "Anirban Sen",          number: "+919830011223",   fav: false },
+    { name: "Aniruddha Roy",        number: "+919007044556",   fav: false },
+    { name: "Antareep Das",         number: "+918335077889",   fav: false },
+    { name: "Bapi",                 number: "+919876543210",   fav: true, label: "mobile" },
+    { name: "Bengali Sir",          number: "+917003012345",   fav: false },
+    { name: "Carlcare Service",     number: "18001234567",     fav: false },
+    { name: "Cyber Crime Helpline", number: "1930",            fav: false },
+    { name: "Dipanwita",            number: "+919123456780",   fav: true, label: "mobile" },
+    { name: "Emergency",            number: "112",             fav: false },
+    { name: "Mom",                  number: "+919999900000",   fav: true, label: "home" },
+    { name: "Rohan Mehta",          number: "+918888812345",   fav: false },
+    { name: "Sayan Ghosh",          number: "+917777754321",   fav: false },
+    { name: "Work",                 number: "+913340005000",   fav: false }
+  ];
+  var recents = [
+    { name: "Mom",             number: "+919999900000", type: "outgoing", missed:false, time: "9:12 AM" },
+    { name: "Bapi",            number: "+919876543210", type: "incoming", missed:false, time: "Yesterday" },
+    { name: "+917001122334",   number: "+917001122334", type: "missed",   missed:true,  time: "Yesterday" },
+    { name: "Dipanwita",       number: "+919123456780", type: "outgoing", missed:false, time: "Monday" },
+    { name: "Sayan Ghosh",     number: "+917777754321", type: "incoming", missed:false, time: "Monday" },
+    { name: "Cyber Crime Helpline", number: "1930",     type: "outgoing", missed:false, time: "Sun" }
+  ];
+  var padKeys = [
+    { n: "1", l: "" }, { n: "2", l: "ABC" }, { n: "3", l: "DEF" },
+    { n: "4", l: "GHI" }, { n: "5", l: "JKL" }, { n: "6", l: "MNO" },
+    { n: "7", l: "PQRS" }, { n: "8", l: "TUV" }, { n: "9", l: "WXYZ" },
+    { n: "*", sym:true }, { n: "0", zero:true }, { n: "#", sym:true }
+  ];
+
+  var $ = function (s, r) { return (r || document).querySelector(s); };
+  function initials(name) { if (/^[\d+]/.test(name)) return "#"; var p = name.trim().split(/\s+/); return (p[0][0] + (p[1] ? p[1][0] : "")).toUpperCase(); }
+  function avatar(name) { return '<div class="avatar">' + initials(name) + '</div>'; }
+  function findContact(number) { for (var i=0;i<contacts.length;i++) if (contacts[i].number===number) return contacts[i]; return null; }
+
+  /* ---- Keypad ---- */
+  var pad = $("#pad");
+  padKeys.forEach(function (k) {
+    var el = document.createElement("div"); el.className = "key"; el.setAttribute("data-key", k.n);
+    if (k.zero) { el.innerHTML = '<div class="num">0</div><div class="let" style="font-size:16px;letter-spacing:0;margin-top:-2px;">+</div>'; el.setAttribute("data-long","+"); }
+    else if (k.sym) { el.innerHTML = '<div class="sym">' + k.n + '</div>'; }
+    else { el.innerHTML = '<div class="num">' + k.n + '</div>' + (k.l ? '<div class="let">' + k.l + '</div>' : ''); }
+    pad.appendChild(el);
+  });
+
+  var dialDisplay = $("#dialDisplay"), dialSub = $("#dialSub"), delBtn = $("#delBtn"), dialValue = "";
+  function renderDial() {
+    dialDisplay.textContent = dialValue;
+    var len = dialValue.length;
+    dialDisplay.style.fontSize = len > 16 ? "26px" : len > 11 ? "34px" : "46px";
+    delBtn.classList.toggle("show", dialValue.length > 0);
+    var c = findContact(dialValue);
+    dialSub.textContent = c ? c.name : (dialValue.length > 0 ? "Add Number" : "");
+  }
+  function press(val) { dialValue += val; renderDial(); beep(val); }
+
+  pad.addEventListener("pointerdown", function (e) {
+    var key = e.target.closest(".key"); if (!key) return;
+    var longHoldVal = key.getAttribute("data-long"), val = key.getAttribute("data-key");
+    if (longHoldVal) {
+      var held = false;
+      var t = setTimeout(function () { held = true; dialValue += longHoldVal; renderDial(); beep("+"); }, 450);
+      var up = function () { clearTimeout(t); if (!held) press(val); key.removeEventListener("pointerup", up); key.removeEventListener("pointerleave", up); };
+      key.addEventListener("pointerup", up); key.addEventListener("pointerleave", up);
+    } else press(val);
+  });
+  delBtn.addEventListener("click", function () { dialValue = dialValue.slice(0, -1); renderDial(); });
+  delBtn.addEventListener("dblclick", function () { dialValue = ""; renderDial(); });
+
+  /* ---- DTMF tone ---- */
+  var actx = null;
+  var dtmf = {"1":[697,1209],"2":[697,1336],"3":[697,1477],"4":[770,1209],"5":[770,1336],"6":[770,1477],"7":[852,1209],"8":[852,1336],"9":[852,1477],"*":[941,1209],"0":[941,1336],"#":[941,1477],"+":[941,1336]};
+  function beep(key) {
+    var pair = dtmf[key]; if (!pair) return;
+    try {
+      if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+      if (actx.state === "suspended") actx.resume();
+      var g = actx.createGain(); g.gain.value = 0.08; g.connect(actx.destination);
+      pair.forEach(function (f) { var o = actx.createOscillator(); o.type = "sine"; o.frequency.value = f; o.connect(g); o.start(); o.stop(actx.currentTime + 0.12); });
+      g.gain.setValueAtTime(0.08, actx.currentTime); g.gain.exponentialRampToValueAtTime(0.0001, actx.currentTime + 0.12);
+    } catch (e) {}
+  }
+
+  /* ---- Lists ---- */
+  function callIcon(type) {
+    if (type === "missed")   return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2.4" stroke-linecap="round"><path d="M21 7l-8 8-4-4M17 7h4v4"/></svg>';
+    if (type === "incoming") return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M3 7l8 8 4-4M7 17H3v-4"/></svg>';
+    return '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M21 7l-8 8-4-4M17 7h4v4"/></svg>';
+  }
+  function renderFav() {
+    $("#favList").innerHTML = contacts.filter(function (c){return c.fav;}).map(function (c) {
+      return '<div class="row" data-number="'+c.number+'" data-name="'+c.name+'">'+avatar(c.name)+
+        '<div class="meta"><div class="name">'+c.name+'</div>'+
+        '<div class="sub"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.3 21 3 13.7 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.2.2 2.4.6 3.6.1.4 0 .8-.3 1l-2.2 2.2z"/></svg> '+(c.label||"mobile")+'</div></div>'+
+        '<div class="info-i"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01" stroke-linecap="round"/></svg></div></div>';
+    }).join("");
+  }
+  function renderRecents() {
+    $("#recentList").innerHTML = recents.map(function (r) {
+      return '<div class="row" data-number="'+r.number+'" data-name="'+r.name+'">'+avatar(r.name)+
+        '<div class="meta"><div class="name '+(r.missed?"missed":"")+'">'+r.name+'</div>'+
+        '<div class="sub">'+callIcon(r.type)+(r.type==="outgoing"?"Outgoing":r.type==="incoming"?"Incoming":"Missed")+' · mobile</div></div>'+
+        '<div class="time">'+r.time+'</div></div>';
+    }).join("");
+  }
+  function renderContacts() {
+    var sorted = contacts.slice().sort(function (a,b){return a.name.localeCompare(b.name);});
+    var html = "", last = "";
+    sorted.forEach(function (c) {
+      var L = c.name[0].toUpperCase(); if (/[^A-Z]/.test(L)) L = "#";
+      if (L !== last) { html += '<div class="section-head">'+L+'</div>'; last = L; }
+      html += '<div class="row" data-number="'+c.number+'" data-name="'+c.name+'">'+avatar(c.name)+'<div class="meta"><div class="name">'+c.name+'</div></div></div>';
+    });
+    $("#contactList").innerHTML = html;
+  }
+  renderFav(); renderRecents(); renderContacts(); renderDial();
+
+  /* ---- Calling ---- */
+  var incall = $("#incall"), callTimer = null, toastTimer = null;
+  function toast(msg) {
+    var t = $("#toast"); t.textContent = msg; t.classList.add("show");
+    clearTimeout(toastTimer); toastTimer = setTimeout(function(){ t.classList.remove("show"); }, 2200);
+  }
+  function placeCall(name, number) {
+    if (!number) return;
+    if (NATIVE) {
+      // Real cellular call through the Android telephony bridge
+      try { window.Android.placeCall(number); } catch (e) { toast("Call failed"); }
+      return;
+    }
+    // Browser demo: show the in-call screen
+    demoInCall(name, number);
+  }
+  function demoInCall(name, number) {
+    $("#icName").textContent = name || number || "Unknown";
+    $("#icAvatar").textContent = /^[\d+]/.test(name || "") ? "#" : initials(name || "?");
+    $("#icStat").textContent = "calling…";
+    incall.classList.add("show");
+    clearTimeout(callTimer); var secs = 0;
+    callTimer = setTimeout(function tick(){ $("#icStat").textContent = "00:" + String(++secs).padStart(2,"0"); callTimer = setTimeout(tick,1000); }, 1800);
+  }
+  function endCall() { incall.classList.remove("show"); clearTimeout(callTimer); document.querySelectorAll(".ic-btn.on").forEach(function(b){b.classList.remove("on");}); }
+
+  // row taps
+  document.addEventListener("click", function (e) {
+    var row = e.target.closest(".row"); if (!row) return;
+    if (e.target.closest(".info-i")) return;
+    placeCall(row.getAttribute("data-name"), row.getAttribute("data-number"));
+  });
+  // call button
+  $("#callBtn").addEventListener("click", function () {
+    if (!dialValue) return;
+    var c = findContact(dialValue);
+    this.classList.add("pulse"); var self = this; setTimeout(function(){ self.classList.remove("pulse"); }, 600);
+    placeCall(c ? c.name : dialValue, dialValue);
+  });
+  $("#endBtn").addEventListener("click", endCall);
+  incall.addEventListener("click", function (e) {
+    var b = e.target.closest(".ic-btn");
+    if (b && (b.getAttribute("data-toggle")==="mute" || b.getAttribute("data-toggle")==="speaker")) b.classList.toggle("on");
+  });
+
+  // Let Android notify JS of call status (optional)
+  window.detoOnCallStatus = function (msg) { toast(msg); };
+
+  /* ---- Tabs ---- */
+  var tabbar = $("#tabbar"), indicator = $("#tabIndicator");
+  var tabs = Array.prototype.slice.call(tabbar.querySelectorAll(".tab"));
+  function moveIndicator(tab) { indicator.style.width = tab.offsetWidth + "px"; indicator.style.transform = "translateX(" + tab.offsetLeft + "px)"; }
+  function switchView(name) {
+    tabs.forEach(function (t) { var on = t.getAttribute("data-view")===name; t.classList.toggle("active", on); if (on) moveIndicator(t); });
+    document.querySelectorAll(".view").forEach(function (v){ v.classList.toggle("active", v.id===name); });
+  }
+  tabbar.addEventListener("click", function (e) { var tab = e.target.closest(".tab"); if (tab) switchView(tab.getAttribute("data-view")); });
+  window.addEventListener("resize", function () { var a = tabbar.querySelector(".tab.active"); if (a) moveIndicator(a); });
+
+  /* ---- Clock ---- */
+  function tickClock() { var d = new Date(); $("#clock").textContent = d.getHours() + ":" + String(d.getMinutes()).padStart(2,"0"); }
+  tickClock(); setInterval(tickClock, 10000);
+
+  // init
+  switchView("keypad");
+  setTimeout(function(){ var a = tabbar.querySelector(".tab.active"); if (a) moveIndicator(a); }, 30);
+})();
+</script>
+</body>
+</html>
