@@ -6,12 +6,6 @@
 <meta name="theme-color" content="#000000" />
 <title>Deto Phone</title>
 <style>
-  /* ============================================================
-     Deto Phone · iPhone-style dialer · "Crystal Glass"
-     Runs inside an Android WebView (real calls via Android bridge)
-     and standalone in a browser (demo in-call overlay).
-     ============================================================ */
-
   :root {
     --green: #34c759;
     --green-glow: rgba(52, 199, 89, 0.55);
@@ -25,9 +19,13 @@
     --glass-tint-strong: rgba(255, 255, 255, 0.14);
     --glass-edge: rgba(255, 255, 255, 0.5);
     --glass-edge-soft: rgba(255, 255, 255, 0.12);
-    --safe-top: env(safe-area-inset-top, 48px);
+    /* Native injects real values; these are browser fallbacks */
+    --safe-top: env(safe-area-inset-top, 44px);
     --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-left: env(safe-area-inset-left, 0px);
+    --safe-right: env(safe-area-inset-right, 0px);
     --tabbar-h: 92px;
+    --ios-ease: cubic-bezier(0.32, 0.72, 0, 1);
   }
 
   * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -47,33 +45,36 @@
 
   .phone {
     position: relative;
-    width: min(100vw, 430px);
-    height: min(100vh, 932px);
+    width: 100vw;
+    height: 100vh;
     max-height: 100vh;
     overflow: hidden;
     background: #000;
     isolation: isolate;
   }
-  @media (min-width: 460px) and (min-height: 940px) {
-    .phone { border-radius: 54px; box-shadow: 0 0 0 10px #1c1c1e, 0 0 0 12px #2c2c2e, 0 40px 120px rgba(0,0,0,0.8); }
+  /* Only mock a phone bezel on large (desktop) screens */
+  @media (min-width: 500px) and (min-height: 940px) {
+    .phone { width: 430px; height: 932px; border-radius: 54px;
+      box-shadow: 0 0 0 10px #1c1c1e, 0 0 0 12px #2c2c2e, 0 40px 120px rgba(0,0,0,0.8); }
   }
 
-  /* Ambient color field that the crystal glass refracts */
+  /* Vivid ambient field so the crystal glass has colour to refract */
   .phone::before {
     content: ""; position: absolute; inset: -25%; z-index: 0;
     background:
-      radial-gradient(42% 32% at 80% 6%, rgba(10,132,255,0.28), transparent 70%),
-      radial-gradient(48% 38% at 12% 94%, rgba(52,199,89,0.22), transparent 70%),
-      radial-gradient(42% 30% at 92% 88%, rgba(191,90,242,0.20), transparent 70%),
-      radial-gradient(40% 30% at 8% 30%, rgba(255,159,10,0.14), transparent 70%);
-    filter: blur(12px); pointer-events: none;
+      radial-gradient(40% 30% at 80% 4%, rgba(10,132,255,0.35), transparent 70%),
+      radial-gradient(55% 42% at 12% 96%, rgba(52,199,89,0.30), transparent 72%),
+      radial-gradient(50% 36% at 88% 92%, rgba(191,90,242,0.28), transparent 72%),
+      radial-gradient(60% 34% at 50% 108%, rgba(10,132,255,0.22), transparent 70%),
+      radial-gradient(40% 30% at 6% 32%, rgba(255,159,10,0.16), transparent 70%);
+    filter: blur(14px); pointer-events: none;
   }
 
   .screen { position: absolute; inset: 0; z-index: 1; display: flex; flex-direction: column; }
 
-  /* ===================== Status bar (hidden on native, real one shows) ===================== */
+  /* fake status bar (browser only; hidden on native where the real bar shows) */
   .statusbar {
-    position: relative; z-index: 5; height: 48px;
+    position: relative; z-index: 5; height: 44px;
     display: flex; align-items: flex-end; justify-content: space-between;
     padding: 0 26px 6px; font-size: 15px; font-weight: 600; letter-spacing: 0.3px; flex: none;
   }
@@ -86,14 +87,17 @@
   body.native .statusbar, body.native .island { display: none; }
   body.native .screen { padding-top: var(--safe-top); }
 
-  /* ===================== Views ===================== */
+  /* ===================== Views + iOS slide transitions ===================== */
   .views { position: relative; flex: 1; overflow: hidden; }
-  .view { position: absolute; inset: 0; display: flex; flex-direction: column;
-    opacity: 0; visibility: hidden; transform: translateY(8px);
-    transition: opacity 0.28s ease, transform 0.28s ease, visibility 0.28s;
-    padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom) + 6px); }
-  .view.active { opacity: 1; visibility: visible; transform: none; }
-  .scroll { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  .view {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    opacity: 0; visibility: hidden; transform: translateX(0);
+    transition: transform 0.42s var(--ios-ease), opacity 0.34s ease;
+    padding-bottom: calc(var(--tabbar-h) + var(--safe-bottom) + 6px);
+    will-change: transform, opacity;
+  }
+  .view.active { opacity: 1; visibility: visible; }
+  .scroll { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
   .scroll::-webkit-scrollbar { width: 0; }
 
   .large-title { font-size: 34px; font-weight: 700; letter-spacing: -0.5px; padding: 6px 20px 10px; display: flex; align-items: center; justify-content: space-between; }
@@ -101,13 +105,11 @@
     background: var(--glass-tint); border: 1px solid var(--glass-edge-soft); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
 
   /* ===================== CRYSTAL GLASS primitive ===================== */
-  /* Clearer than frosted: light blur + high saturation + crisp bright
-     rim, an iridescent edge tint, and a sharp specular streak. */
   .glass {
     position: relative;
     background: linear-gradient(135deg, rgba(255,255,255,0.14), rgba(255,255,255,0.04) 45%, rgba(255,255,255,0.02));
-    backdrop-filter: blur(14px) saturate(200%) brightness(1.06);
-    -webkit-backdrop-filter: blur(14px) saturate(200%) brightness(1.06);
+    backdrop-filter: blur(16px) saturate(210%) brightness(1.08);
+    -webkit-backdrop-filter: blur(16px) saturate(210%) brightness(1.08);
     border: 1px solid var(--glass-edge-soft);
     box-shadow:
       inset 0 1px 0.5px var(--glass-edge),
@@ -146,13 +148,13 @@
       inset 2px 0 3px rgba(130,195,255,0.12),
       inset -2px 0 3px rgba(255,130,205,0.10),
       0 6px 16px rgba(0,0,0,0.38);
-    transition: transform 0.1s ease, box-shadow 0.12s ease; position: relative; overflow: hidden;
+    transition: transform 0.1s var(--ios-ease), box-shadow 0.12s ease; position: relative; overflow: hidden;
   }
   .key::before { content: ""; position: absolute; top: 5px; left: 14px; right: 14px; height: 38%; border-radius: 50%;
     background: linear-gradient(180deg, rgba(255,255,255,0.4), transparent); pointer-events: none; }
-  .key:active { transform: scale(0.93);
-    background: radial-gradient(120% 120% at 30% 22%, rgba(255,255,255,0.45), rgba(255,255,255,0.16) 60%);
-    box-shadow: inset 0 2px 1px rgba(255,255,255,0.7), inset 0 -1px 3px rgba(0,0,0,0.3), 0 0 26px rgba(255,255,255,0.18); }
+  .key:active { transform: scale(0.92);
+    background: radial-gradient(120% 120% at 30% 22%, rgba(255,255,255,0.5), rgba(255,255,255,0.18) 60%);
+    box-shadow: inset 0 2px 1px rgba(255,255,255,0.75), inset 0 -1px 3px rgba(0,0,0,0.3), 0 0 28px rgba(255,255,255,0.2); }
   .key .num { font-size: 36px; font-weight: 400; line-height: 1; }
   .key .let { font-size: 10px; font-weight: 600; letter-spacing: 2px; margin-top: 4px; color: var(--text-dim); }
   .key .sym { font-size: 34px; font-weight: 500; }
@@ -162,8 +164,8 @@
     background: radial-gradient(120% 120% at 35% 22%, #7cf09a, var(--green) 52%, #239044 100%);
     border: 1px solid rgba(255,255,255,0.35);
     box-shadow: inset 0 2px 1px rgba(255,255,255,0.6), inset 0 -3px 6px rgba(0,0,0,0.25), 0 8px 26px var(--green-glow);
-    transition: transform 0.12s ease, box-shadow 0.2s ease; }
-  .call-btn:active { transform: scale(0.92); }
+    transition: transform 0.12s var(--ios-ease), box-shadow 0.2s ease; }
+  .call-btn:active { transform: scale(0.9); }
   .call-btn.pulse { animation: callpulse 1s ease-in-out infinite; }
   @keyframes callpulse { 0%,100% { box-shadow: inset 0 2px 1px rgba(255,255,255,0.6), 0 8px 26px var(--green-glow); }
     50% { box-shadow: inset 0 2px 1px rgba(255,255,255,0.6), 0 8px 40px var(--green-glow), 0 0 0 9px rgba(52,199,89,0.14); } }
@@ -174,7 +176,7 @@
   .search { margin: 2px 16px 14px; display: flex; align-items: center; gap: 8px; padding: 11px 14px; border-radius: 14px; color: var(--text-dim); font-size: 17px; }
   .section-head { font-size: 21px; font-weight: 700; padding: 14px 20px 6px; }
   .row { display: flex; align-items: center; gap: 14px; padding: 11px 20px; position: relative; cursor: pointer; }
-  .row:active { background: rgba(255,255,255,0.05); }
+  .row:active { background: rgba(255,255,255,0.06); }
   .row + .row::before { content: ""; position: absolute; left: 74px; right: 0; top: 0; height: 1px; background: var(--sep); }
   .avatar { width: 44px; height: 44px; border-radius: 50%; flex: none; display: grid; place-items: center; font-size: 18px; font-weight: 600; color: #fff;
     background: linear-gradient(145deg, #3a3a3c, #1c1c1e); box-shadow: inset 0 1px 0 rgba(255,255,255,0.14); }
@@ -186,37 +188,38 @@
   .row .info-i { width: 28px; height: 28px; border-radius: 50%; color: var(--blue); display: grid; place-items: center; background: var(--glass-tint); border: 1px solid var(--glass-edge-soft); }
   .vm-empty { text-align: center; color: var(--text-dim); padding: 60px 40px; font-size: 15px; line-height: 1.5; }
 
-  /* ===================== Liquid/Crystal glass tab bar ===================== */
+  /* ===================== Crystal-glass tab bar (edge-to-edge aware) ===================== */
   .tabbar-wrap { position: absolute; left: 0; right: 0; bottom: 0; z-index: 10; display: flex; justify-content: center;
-    padding: 0 12px calc(16px + var(--safe-bottom)); pointer-events: none; }
-  .tabbar { pointer-events: auto; width: 100%; max-width: 406px; display: flex; justify-content: space-around; align-items: center;
-    padding: 10px 6px; border-radius: 30px; background: rgba(28,28,30,0.4);
-    backdrop-filter: blur(26px) saturate(210%) brightness(1.05); -webkit-backdrop-filter: blur(26px) saturate(210%) brightness(1.05);
-    border: 1px solid rgba(255,255,255,0.14);
-    box-shadow: inset 0 1px 0 rgba(255,255,255,0.35), inset 0 -1px 2px rgba(0,0,0,0.3),
-      inset 2px 0 3px rgba(130,195,255,0.10), inset -2px 0 3px rgba(255,130,205,0.08), 0 10px 40px rgba(0,0,0,0.55);
+    padding: 0 calc(12px + var(--safe-left)) calc(14px + var(--safe-bottom)) calc(12px + var(--safe-right)); pointer-events: none; }
+  .tabbar { pointer-events: auto; width: 100%; max-width: 440px; display: flex; justify-content: space-around; align-items: center;
+    padding: 10px 6px; border-radius: 32px; background: rgba(40,40,48,0.42);
+    backdrop-filter: blur(30px) saturate(220%) brightness(1.12); -webkit-backdrop-filter: blur(30px) saturate(220%) brightness(1.12);
+    border: 1px solid rgba(255,255,255,0.18);
+    box-shadow: inset 0 1.5px 0 rgba(255,255,255,0.4), inset 0 -1px 2px rgba(0,0,0,0.35),
+      inset 2px 0 3px rgba(130,195,255,0.14), inset -2px 0 3px rgba(255,130,205,0.10), 0 12px 44px rgba(0,0,0,0.6);
     position: relative; overflow: hidden; }
   .tabbar::after { content:""; position:absolute; inset:0; pointer-events:none;
-    background: linear-gradient(118deg, rgba(255,255,255,0.18), transparent 32%, transparent 70%, rgba(255,255,255,0.12)); }
+    background: linear-gradient(118deg, rgba(255,255,255,0.22), transparent 30%, transparent 68%, rgba(255,255,255,0.15)); }
   .tab { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; color: var(--text-dim);
-    font-size: 10px; font-weight: 500; cursor: pointer; padding: 4px 0; border-radius: 20px; position: relative; z-index: 1; transition: color 0.2s; }
-  .tab svg { width: 24px; height: 24px; }
+    font-size: 10px; font-weight: 500; cursor: pointer; padding: 4px 0; border-radius: 20px; position: relative; z-index: 1; transition: color 0.25s; }
+  .tab svg { width: 24px; height: 24px; transition: transform 0.3s var(--ios-ease); }
   .tab.active { color: var(--blue); }
-  .tab-indicator { position: absolute; top: 6px; bottom: 6px; z-index: 0; border-radius: 22px;
-    background: rgba(255,255,255,0.16); border: 1px solid rgba(255,255,255,0.26);
-    box-shadow: inset 0 1px 0 rgba(255,255,255,0.5), 0 2px 10px rgba(0,0,0,0.25); backdrop-filter: blur(8px);
-    transition: transform 0.35s cubic-bezier(0.34,1.3,0.5,1), width 0.35s cubic-bezier(0.34,1.3,0.5,1); pointer-events: none; }
+  .tab.active svg { transform: translateY(-1px) scale(1.06); }
+  .tab-indicator { position: absolute; top: 6px; bottom: 6px; z-index: 0; border-radius: 24px;
+    background: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.3);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.55), inset 0 -2px 4px rgba(0,0,0,0.2), 0 2px 10px rgba(0,0,0,0.25); backdrop-filter: blur(8px);
+    transition: transform 0.45s var(--ios-ease), width 0.45s var(--ios-ease); pointer-events: none; }
 
   /* ===================== Demo in-call overlay (browser only) ===================== */
-  .incall { position: absolute; inset: 0; z-index: 30; display: flex; flex-direction: column; align-items: center; padding-top: 120px;
+  .incall { position: absolute; inset: 0; z-index: 30; display: flex; flex-direction: column; align-items: center; padding-top: calc(var(--safe-top) + 80px);
     background: radial-gradient(120% 70% at 50% 0%, #1d3a2a, #0a1410 60%, #050807);
-    opacity: 0; visibility: hidden; transform: scale(1.04); transition: opacity 0.4s ease, transform 0.4s ease, visibility 0.4s; }
+    opacity: 0; visibility: hidden; transform: translateY(16px) scale(1.03); transition: opacity 0.42s var(--ios-ease), transform 0.42s var(--ios-ease), visibility 0.42s; }
   .incall.show { opacity: 1; visibility: visible; transform: none; }
   .incall .cname { font-size: 34px; font-weight: 500; }
   .incall .cstat { color: var(--text-dim); font-size: 18px; margin-top: 8px; }
   .incall .cavatar { width: 110px; height: 110px; border-radius: 50%; margin: 40px 0 10px; display: grid; place-items: center; font-size: 44px; font-weight: 600;
     background: linear-gradient(145deg,#3a3a3c,#1c1c1e); box-shadow: inset 0 2px 0 rgba(255,255,255,0.15), 0 10px 40px rgba(0,0,0,0.5); }
-  .incall-actions { margin-top: auto; margin-bottom: 70px; display: grid; grid-template-columns: repeat(3, 84px); gap: 26px 36px; justify-content: center; }
+  .incall-actions { margin-top: auto; margin-bottom: calc(60px + var(--safe-bottom)); display: grid; grid-template-columns: repeat(3, 84px); gap: 26px 36px; justify-content: center; }
   .ic-btn { width: 84px; height: 84px; border-radius: 50%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
     font-size: 12px; color: #fff; cursor: pointer; background: var(--glass-tint-strong);
     backdrop-filter: blur(18px) saturate(170%); -webkit-backdrop-filter: blur(18px) saturate(170%);
@@ -228,10 +231,18 @@
     background: radial-gradient(120% 120% at 35% 25%, #ff6b60, var(--red) 55%, #c42920); box-shadow: inset 0 2px 1px rgba(255,255,255,0.4), 0 8px 26px rgba(255,69,58,0.5); transition: transform 0.12s; }
   .end-btn:active { transform: scale(0.9); }
 
-  .toast { position: absolute; left: 50%; bottom: calc(var(--tabbar-h) + 30px); transform: translateX(-50%) translateY(20px);
-    background: rgba(28,28,30,0.7); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.15);
+  .toast { position: absolute; left: 50%; bottom: calc(var(--tabbar-h) + var(--safe-bottom) + 24px); transform: translateX(-50%) translateY(20px);
+    background: rgba(28,28,30,0.72); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.15);
     color: #fff; padding: 10px 18px; border-radius: 16px; font-size: 14px; z-index: 40; opacity: 0; transition: opacity 0.25s, transform 0.25s; pointer-events: none; box-shadow: 0 8px 30px rgba(0,0,0,0.5); }
   .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* Fallback when the WebView/browser lacks backdrop-filter: make glass opaque enough to read */
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .glass, .plus-btn, .ic-btn { background: rgba(44,44,50,0.9) !important; }
+    .tabbar { background: rgba(38,38,46,0.92) !important; }
+    .key { background: rgba(62,62,70,0.92) !important; }
+    .tab-indicator { background: rgba(255,255,255,0.22) !important; }
+  }
 </style>
 </head>
 <body>
@@ -249,7 +260,7 @@
         </div>
       </div>
 
-      <div class="views">
+      <div class="views" id="views">
         <div class="view" id="favourites">
           <div class="large-title">Favourites <div class="plus-btn">+</div></div>
           <div class="scroll fav" id="favList"></div>
@@ -343,7 +354,9 @@
 (function () {
   "use strict";
 
-  var NATIVE = !!(window.Android && typeof window.Android.placeCall === "function");
+  // Robust native bridge detection (don't rely on typeof of injected methods)
+  var NATIVE = false;
+  try { NATIVE = !!(window.Android && window.Android.placeCall); } catch (e) { NATIVE = false; }
   if (NATIVE) document.body.classList.add("native");
 
   var contacts = [
@@ -401,7 +414,7 @@
     var c = findContact(dialValue);
     dialSub.textContent = c ? c.name : (dialValue.length > 0 ? "Add Number" : "");
   }
-  function press(val) { dialValue += val; renderDial(); beep(val); }
+  function pressKey(val) { dialValue += val; renderDial(); beep(val); }
 
   pad.addEventListener("pointerdown", function (e) {
     var key = e.target.closest(".key"); if (!key) return;
@@ -409,9 +422,9 @@
     if (longHoldVal) {
       var held = false;
       var t = setTimeout(function () { held = true; dialValue += longHoldVal; renderDial(); beep("+"); }, 450);
-      var up = function () { clearTimeout(t); if (!held) press(val); key.removeEventListener("pointerup", up); key.removeEventListener("pointerleave", up); };
+      var up = function () { clearTimeout(t); if (!held) pressKey(val); key.removeEventListener("pointerup", up); key.removeEventListener("pointerleave", up); };
       key.addEventListener("pointerup", up); key.addEventListener("pointerleave", up);
-    } else press(val);
+    } else pressKey(val);
   });
   delBtn.addEventListener("click", function () { dialValue = dialValue.slice(0, -1); renderDial(); });
   delBtn.addEventListener("dblclick", function () { dialValue = ""; renderDial(); });
@@ -472,12 +485,13 @@
   }
   function placeCall(name, number) {
     if (!number) return;
-    if (NATIVE) {
-      // Real cellular call through the Android telephony bridge
-      try { window.Android.placeCall(number); } catch (e) { toast("Call failed"); }
-      return;
+    // 1) Native bridge -> real cellular call
+    if (window.Android && window.Android.placeCall) {
+      try { window.Android.placeCall(number); return; } catch (e) {}
     }
-    // Browser demo: show the in-call screen
+    // 2) tel: link -> WebView intercepts it (covers any bridge edge case)
+    if (NATIVE) { try { window.location.href = "tel:" + number; return; } catch (e) {} }
+    // 3) Browser demo -> show the in-call screen
     demoInCall(name, number);
   }
   function demoInCall(name, number) {
@@ -490,13 +504,11 @@
   }
   function endCall() { incall.classList.remove("show"); clearTimeout(callTimer); document.querySelectorAll(".ic-btn.on").forEach(function(b){b.classList.remove("on");}); }
 
-  // row taps
   document.addEventListener("click", function (e) {
     var row = e.target.closest(".row"); if (!row) return;
     if (e.target.closest(".info-i")) return;
     placeCall(row.getAttribute("data-name"), row.getAttribute("data-number"));
   });
-  // call button
   $("#callBtn").addEventListener("click", function () {
     if (!dialValue) return;
     var c = findContact(dialValue);
@@ -508,28 +520,75 @@
     var b = e.target.closest(".ic-btn");
     if (b && (b.getAttribute("data-toggle")==="mute" || b.getAttribute("data-toggle")==="speaker")) b.classList.toggle("on");
   });
-
-  // Let Android notify JS of call status (optional)
   window.detoOnCallStatus = function (msg) { toast(msg); };
 
-  /* ---- Tabs ---- */
+  /* ---- Tabs + iOS slide transitions + swipe ---- */
   var tabbar = $("#tabbar"), indicator = $("#tabIndicator");
   var tabs = Array.prototype.slice.call(tabbar.querySelectorAll(".tab"));
+  var order = ["favourites","recents","contacts","keypad","voicemail"];
+  var current = "keypad", animating = false;
+
   function moveIndicator(tab) { indicator.style.width = tab.offsetWidth + "px"; indicator.style.transform = "translateX(" + tab.offsetLeft + "px)"; }
+  function setActiveTab(name) { tabs.forEach(function (t) { var on = t.getAttribute("data-view")===name; t.classList.toggle("active", on); if (on) moveIndicator(t); }); }
+
   function switchView(name) {
-    tabs.forEach(function (t) { var on = t.getAttribute("data-view")===name; t.classList.toggle("active", on); if (on) moveIndicator(t); });
-    document.querySelectorAll(".view").forEach(function (v){ v.classList.toggle("active", v.id===name); });
+    if (name === current) return;
+    if (animating) { // snap if mid-animation
+      document.querySelectorAll(".view").forEach(function(v){ v.classList.remove("active"); v.style.cssText=""; });
+      document.getElementById(name).classList.add("active");
+      current = name; animating = false; setActiveTab(name); return;
+    }
+    var oldIdx = order.indexOf(current), newIdx = order.indexOf(name);
+    var dir = newIdx > oldIdx ? 1 : -1;               // 1: new slides in from right
+    var oldV = document.getElementById(current), newV = document.getElementById(name);
+    animating = true;
+
+    newV.style.transition = "none";
+    newV.style.transform = "translateX(" + (dir * 100) + "%)";
+    newV.style.opacity = "1";
+    newV.classList.add("active");
+    void newV.offsetWidth;                            // reflow to commit start state
+    newV.style.transition = "";
+    newV.style.transform = "translateX(0)";
+    oldV.style.transform = "translateX(" + (-dir * 24) + "%)";
+    oldV.style.opacity = "0";
+
+    setActiveTab(name);
+    current = name;
+    setTimeout(function () {
+      oldV.classList.remove("active");
+      oldV.style.cssText = ""; newV.style.cssText = "";
+      animating = false;
+    }, 440);
   }
+
   tabbar.addEventListener("click", function (e) { var tab = e.target.closest(".tab"); if (tab) switchView(tab.getAttribute("data-view")); });
   window.addEventListener("resize", function () { var a = tabbar.querySelector(".tab.active"); if (a) moveIndicator(a); });
+
+  // Swipe left/right to change tabs (iOS feel), without hijacking vertical scroll
+  var views = $("#views"), sx = 0, sy = 0, tracking = false;
+  views.addEventListener("touchstart", function (e) {
+    if (e.touches.length !== 1) { tracking = false; return; }
+    sx = e.touches[0].clientX; sy = e.touches[0].clientY; tracking = true;
+  }, { passive: true });
+  views.addEventListener("touchend", function (e) {
+    if (!tracking) return; tracking = false;
+    var t = e.changedTouches[0], dx = t.clientX - sx, dy = t.clientY - sy;
+    if (Math.abs(dx) > 55 && Math.abs(dx) > Math.abs(dy) * 1.4) {
+      var i = order.indexOf(current);
+      if (dx < 0 && i < order.length - 1) switchView(order[i + 1]);
+      else if (dx > 0 && i > 0) switchView(order[i - 1]);
+    }
+  }, { passive: true });
 
   /* ---- Clock ---- */
   function tickClock() { var d = new Date(); $("#clock").textContent = d.getHours() + ":" + String(d.getMinutes()).padStart(2,"0"); }
   tickClock(); setInterval(tickClock, 10000);
 
   // init
-  switchView("keypad");
-  setTimeout(function(){ var a = tabbar.querySelector(".tab.active"); if (a) moveIndicator(a); }, 30);
+  document.getElementById("keypad").classList.add("active");
+  setActiveTab("keypad");
+  setTimeout(function(){ var a = tabbar.querySelector(".tab.active"); if (a) moveIndicator(a); }, 40);
 })();
 </script>
 </body>
